@@ -13,20 +13,18 @@ import (
 	"rebutin/internal/delivery/http/response"
 	"rebutin/internal/repository/postgres"
 	"rebutin/internal/usecase"
-	customValidator "rebutin/pkg/validator"
 )
 
 func NewHTTPHandler(
 	cfg *config.Config,
 	db *sqlx.DB,
 	log *logrus.Logger,
-	val *customValidator.CustomValidator,
 ) *gin.Engine {
 	// DI
 	txManager := postgres.NewTxManager(db)
 	simRepo := postgres.NewSimulationRepository(db, log)
 	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log)
-	simHandler := handler.NewSimulationHandler(*simUsecase, val)
+	simHandler := handler.NewSimulationHandler(*simUsecase)
 
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -47,14 +45,13 @@ func NewHTTPHandler(
 
 	// API V1 Group
 	v1 := router.Group("/api/v1")
-	v1.Use(middleware.CSRFMiddleware(log))
-	v1.Use(middleware.SessionMiddleware(log))
 
-	simulation := v1.Group("/simulation")
-	simulation.Use(middleware.AddCSRFMiddleware(log))
-	simulation.Use(middleware.AddSessionMiddleware(log))
-	simulation.POST("", simHandler.Start)
-	simulation.PATCH("/end/:id", simHandler.End)
+	v1.POST("/simulation", middleware.AddCSRFMiddleware(log), middleware.AddSessionMiddleware(log), simHandler.Start)
+
+	protected := v1.Group("")
+	protected.Use(middleware.CSRFMiddleware(log))
+	protected.Use(middleware.SessionMiddleware(log))
+	protected.PATCH("/simulation/end/:id", simHandler.End)
 
 	return router
 }

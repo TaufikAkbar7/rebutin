@@ -9,30 +9,22 @@ import (
 	"rebutin/internal/delivery/http/dto"
 	"rebutin/internal/delivery/http/response"
 	"rebutin/internal/usecase"
-	customValidator "rebutin/pkg/validator"
 )
 
 type SimulationHandler struct {
 	simulationUsecase usecase.SimulationUseCase
-	validator         *customValidator.CustomValidator
 }
 
-func NewSimulationHandler(simulationUsecase usecase.SimulationUseCase, validator *customValidator.CustomValidator) *SimulationHandler {
+func NewSimulationHandler(simulationUsecase usecase.SimulationUseCase) *SimulationHandler {
 	return &SimulationHandler{
 		simulationUsecase: simulationUsecase,
-		validator:         validator,
 	}
 }
 
 func (h *SimulationHandler) Start(c *gin.Context) {
 	var req dto.CreateSimulationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid JSON payload", nil)
-		return
-	}
-
-	if valErrs := h.validator.Validate(&req); len(valErrs) > 0 {
-		response.ValidationError(c, valErrs)
+		response.ValidationError(c, err)
 		return
 	}
 
@@ -46,12 +38,6 @@ func (h *SimulationHandler) Start(c *gin.Context) {
 }
 
 func (h *SimulationHandler) End(c *gin.Context) {
-	var req dto.CreateSimulationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "Invalid JSON payload", nil)
-		return
-	}
-
 	idStr := c.Param("id")
 	id, err := uuid.Parse(idStr)
 	if err != nil {
@@ -65,5 +51,5 @@ func (h *SimulationHandler) End(c *gin.Context) {
 		return
 	}
 
-	response.Success[any](c, http.StatusCreated, "Simulation end successfully", nil)
+	response.Success[any](c, http.StatusOK, "Simulation end successfully", nil)
 }

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,7 +16,9 @@ import (
 	"rebutin/internal/app"
 	"rebutin/pkg/database"
 	"rebutin/pkg/logger"
-	customValidator "rebutin/pkg/validator"
+
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 )
 
 func main() {
@@ -33,9 +37,17 @@ func main() {
 	}
 	defer db.Close()
 
-	val := customValidator.NewCustomValidator()
+	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+			name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+			if name == "-" {
+				return ""
+			}
+			return name
+		})
+	}
 
-	router := app.NewHTTPHandler(cfg, db, log, val)
+	router := app.NewHTTPHandler(cfg, db, log)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.AppPort),

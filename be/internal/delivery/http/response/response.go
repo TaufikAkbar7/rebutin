@@ -2,9 +2,11 @@ package response
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 
 	"rebutin/internal/domain"
 )
@@ -64,10 +66,17 @@ func Error(c *gin.Context, statusCode int, message string, errs error) {
 	})
 }
 
-func ValidationError(c *gin.Context, validationErrors map[string]string) {
+func ValidationError(c *gin.Context, err error) {
+	fieldErrors := make(map[string]string)
+	if validationErrors, ok := err.(validator.ValidationErrors); ok {
+		for _, fieldError := range validationErrors {
+			fieldErrors[fieldError.Field()] = formatErrorMessage(fieldError)
+		}
+	}
+
 	c.JSON(http.StatusBadRequest, APIErrorResponse[map[string]string]{
 		Message: "Validation failed",
-		Errors:  validationErrors,
+		Errors:  fieldErrors,
 	})
 }
 
@@ -94,5 +103,22 @@ func HandleDomainError(c *gin.Context, err error) {
 		Error(c, http.StatusForbidden, "Forbidden action", nil)
 	default:
 		Error(c, http.StatusInternalServerError, "An internal server error occurred", nil)
+	}
+}
+
+func formatErrorMessage(err validator.FieldError) string {
+	switch err.Tag() {
+	case "required":
+		return fmt.Sprintf("%s field is required", err.Field())
+	case "email":
+		return fmt.Sprintf("%s must be a valid email address", err.Field())
+	case "min":
+		return fmt.Sprintf("%s must be at least %s characters long", err.Field(), err.Param())
+	case "max":
+		return fmt.Sprintf("%s must be at most %s characters long", err.Field(), err.Param())
+	case "uuid":
+		return fmt.Sprintf("%s must be a valid UUID", err.Field())
+	default:
+		return fmt.Sprintf("%s is invalid", err.Field())
 	}
 }

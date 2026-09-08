@@ -23,11 +23,14 @@ func CSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 		if err != nil {
 			log.Errorf("[Middelware.CSRFMiddleware] Error get CSRF: %v", err)
 			response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
+			c.Abort()
 			return
 		}
 		if cookie == "" {
 			log.Errorf("[Middelware.CSRFMiddleware] CSRF is missing: %v", err)
 			response.Error(c, http.StatusForbidden, "CSRF cookie missing", nil)
+			c.Abort()
+			return
 		}
 
 		// bypass if not method mutation data
@@ -41,11 +44,14 @@ func CSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 		csrf := c.GetHeader(csrfHeaderName)
 		if csrf == "" {
 			response.Error(c, http.StatusForbidden, "CSRF token missing in header", nil)
+			c.Abort()
+			return
 		}
 
 		// compare cookie
 		if subtle.ConstantTimeCompare([]byte(cookie), []byte(csrf)) != 1 {
 			response.Error(c, http.StatusForbidden, "Invalid CSRF token", nil)
+			c.Abort()
 			return
 		}
 
@@ -55,15 +61,18 @@ func CSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 
 func SessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(csrfCookieName)
+		cookie, err := c.Cookie(sessionCookieName)
 		if err != nil || cookie == "" {
 			log.Errorf("[Middelware.SessionMiddleware] Error get session: %v", err)
 			response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
+			c.Abort()
 			return
 		}
 		if cookie == "" {
 			log.Errorf("[Middelware.SessionMiddleware] Cookie is missing: %v", err)
 			response.Error(c, http.StatusForbidden, "Session cookie missing", nil)
+			c.Abort()
+			return
 		}
 
 		c.Next()
@@ -72,18 +81,19 @@ func SessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 
 func AddSessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(csrfCookieName)
+		cookie, err := c.Cookie(sessionCookieName)
 		if err != nil || cookie == "" {
 			token, err := token.GenerateRandomToken()
 			if err != nil {
 				log.Errorf("[Middelware.AddSessionMiddleware] Error get session: %v", err)
 				response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
+				c.Abort()
 				return
 			}
 
 			// set cookie
 			c.SetSameSite(http.SameSiteLaxMode)
-			c.SetCookie(csrfCookieName, token, 0, "/", "", true, true)
+			c.SetCookie(sessionCookieName, token, 0, "/", "", true, true)
 			log.Infof("[Middelware.AddSessionMiddleware] Set session cookie successfully")
 		}
 
@@ -99,6 +109,7 @@ func AddCSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 			if err != nil {
 				log.Errorf("[Middelware.AddCSRFMiddleware] Error get CSRF: %v", err)
 				response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
+				c.Abort()
 				return
 			}
 
