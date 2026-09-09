@@ -23,8 +23,13 @@ func NewHTTPHandler(
 	// DI
 	txManager := postgres.NewTxManager(db)
 	simRepo := postgres.NewSimulationRepository(db, log)
-	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log)
+	ticketRepo := postgres.NewTicketRepository(db, log)
+
+	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo)
 	simHandler := handler.NewSimulationHandler(*simUsecase)
+
+	ticketUsecase := usecase.NewTicketUseCase(log, ticketRepo)
+	ticketHandler := handler.NewTicketHandler(*ticketUsecase)
 
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -52,6 +57,8 @@ func NewHTTPHandler(
 	protected.Use(middleware.CSRFMiddleware(log))
 	protected.Use(middleware.SessionMiddleware(log))
 	protected.PATCH("/simulation/end/:id", simHandler.End)
+
+	protected.GET("/categories/:id", ticketHandler.FindCategories)
 
 	return router
 }

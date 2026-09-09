@@ -20,8 +20,7 @@ type Meta struct {
 
 type APIResponseArray[T any] struct {
 	Message string `json:"message"`
-	Data    []T    `json:"data,omitempty"`
-	Meta    *Meta  `json:"meta,omitempty"`
+	Data    []T    `json:"data"`
 }
 
 type APIResponse[T any] struct {
@@ -41,21 +40,10 @@ func Success[T any](c *gin.Context, statusCode int, message string, data T) {
 	})
 }
 
-func SuccessWithMeta[T any](c *gin.Context, statusCode int, message string, data []T, page, limit int, totalItems int64) {
-	totalPages := 0
-	if limit > 0 {
-		totalPages = int((totalItems + int64(limit) - 1) / int64(limit))
-	}
-
+func SuccessWithList[T any](c *gin.Context, statusCode int, message string, data []T) {
 	c.JSON(statusCode, APIResponseArray[T]{
 		Message: message,
 		Data:    data,
-		Meta: &Meta{
-			Page:       page,
-			Limit:      limit,
-			TotalItems: totalItems,
-			TotalPages: totalPages,
-		},
 	})
 }
 
