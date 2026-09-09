@@ -19,6 +19,10 @@ var (
 	ErrSimulationAlreadyStopped = errors.New("simulation run is already ended")
 )
 
+func newValidationError() *ValidationError {
+	return &ValidationError{Errors: make(map[string]string)}
+}
+
 type SimulationRun struct {
 	ID                 uuid.UUID
 	TotalTickets       int
@@ -30,7 +34,7 @@ type SimulationRun struct {
 }
 
 func (s *SimulationRun) Validate() error {
-	vErr := &ValidationError{Errors: make(map[string]string)}
+	vErr := newValidationError()
 
 	if s.TotalTickets <= 0 {
 		vErr.Add("total_tickets", "total tickets must be greater than 0")
@@ -55,9 +59,12 @@ func (s *SimulationRun) Validate() error {
 
 func (s *SimulationRun) Stop() error {
 	if s.Status == StatusEnded {
-		return ErrSimulationAlreadyStopped
+		vErr := newValidationError()
+		vErr.Add("status", ErrSimulationAlreadyStopped.Error())
+		if vErr.HasErrors() {
+			return vErr
+		}
 	}
-	s.Status = StatusEnded
 	return nil
 }
 

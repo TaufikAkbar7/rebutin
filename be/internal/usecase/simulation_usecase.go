@@ -63,20 +63,18 @@ func (u *SimulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 }
 
 func (u *SimulationUseCase) EndSimulation(ctx context.Context, id uuid.UUID) error {
-	err := u.txManager.WithTransaction(ctx, func(txCtx context.Context) error {
-		if _, err := u.repo.GetByID(txCtx, id); err != nil {
-			return err
-		}
-
-		// update status to ended
-		if err := u.repo.UpdateStatus(txCtx, id, domain.StatusEnded); err != nil {
-			return err
-		}
-
-		return nil
-	})
-
+	data, err := u.repo.GetByID(ctx, id)
 	if err != nil {
+		return err
+	}
+
+	// check if status already stop
+	if err := data.Stop(); err != nil {
+		return err
+	}
+
+	// update status to ended
+	if err := u.repo.UpdateStatus(ctx, id, domain.StatusEnded); err != nil {
 		return err
 	}
 
