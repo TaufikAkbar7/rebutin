@@ -31,7 +31,7 @@ func extractTx(ctx context.Context) (*sqlx.Tx, bool) {
 func (tm *TxManager) WithTransaction(ctx context.Context, fn domain.AtomicFunc) error {
 	tx, err := tm.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("gagal memulai db tx: %w", err)
+		return fmt.Errorf("fail start db tx: %w", err)
 	}
 
 	// inject *sqlx.Tx to context

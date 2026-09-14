@@ -26,10 +26,10 @@ func NewHTTPHandler(
 	ticketRepo := postgres.NewTicketRepository(db, log)
 
 	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo)
-	simHandler := handler.NewSimulationHandler(*simUsecase)
+	simHandler := handler.NewSimulationHandler(simUsecase)
 
 	ticketUsecase := usecase.NewTicketUseCase(log, ticketRepo)
-	ticketHandler := handler.NewTicketHandler(*ticketUsecase)
+	ticketHandler := handler.NewTicketHandler(ticketUsecase)
 
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)

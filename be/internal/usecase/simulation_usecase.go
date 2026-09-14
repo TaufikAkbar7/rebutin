@@ -12,18 +12,23 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type SimulationUseCase struct {
+type SimulationUseCase interface {
+	StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error)
+	EndSimulation(ctx context.Context, id uuid.UUID) error
+}
+
+type simulationUseCase struct {
 	txManager  domain.TransactionManager
 	repo       domain.SimulationRepository
 	log        *logrus.Logger
 	ticketRepo domain.TicketRepository
 }
 
-func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository) *SimulationUseCase {
-	return &SimulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo}
+func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository) SimulationUseCase {
+	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo}
 }
 
-func (u *SimulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error) {
+func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error) {
 	id, _ := uuid.NewV7()
 	sim := &domain.SimulationRun{
 		ID:                 id,
@@ -62,7 +67,7 @@ func (u *SimulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 	}, nil
 }
 
-func (u *SimulationUseCase) EndSimulation(ctx context.Context, id uuid.UUID) error {
+func (u *simulationUseCase) EndSimulation(ctx context.Context, id uuid.UUID) error {
 	data, err := u.repo.GetByID(ctx, id)
 	if err != nil {
 		return err
@@ -82,7 +87,7 @@ func (u *SimulationUseCase) EndSimulation(ctx context.Context, id uuid.UUID) err
 	return nil
 }
 
-func (u *SimulationUseCase) setupCategories(totalTickets int, simID uuid.UUID) []domain.TicketCategories {
+func (u *simulationUseCase) setupCategories(totalTickets int, simID uuid.UUID) []domain.TicketCategories {
 	quotaPerCat := totalTickets / len(domain.DefaultCategories)
 	remaining := totalTickets % len(domain.DefaultCategories)
 	categories := make([]domain.TicketCategories, 0, len(domain.DefaultCategories))

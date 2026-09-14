@@ -19,15 +19,9 @@ const (
 
 func CSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(csrfCookieName)
-		if err != nil {
-			log.Errorf("[Middelware.CSRFMiddleware] Error get CSRF: %v", err)
-			response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
-			c.Abort()
-			return
-		}
+		cookie, _ := c.Cookie(csrfCookieName)
 		if cookie == "" {
-			log.Errorf("[Middelware.CSRFMiddleware] CSRF is missing: %v", err)
+			log.Errorf("[Middelware.CSRFMiddleware] CSRF is missing")
 			response.Error(c, http.StatusForbidden, "CSRF cookie missing", nil)
 			c.Abort()
 			return
@@ -61,15 +55,9 @@ func CSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 
 func SessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(sessionCookieName)
-		if err != nil || cookie == "" {
-			log.Errorf("[Middelware.SessionMiddleware] Error get session: %v", err)
-			response.Error(c, http.StatusInternalServerError, "Internal Server Error", nil)
-			c.Abort()
-			return
-		}
+		cookie, _ := c.Cookie(sessionCookieName)
 		if cookie == "" {
-			log.Errorf("[Middelware.SessionMiddleware] Cookie is missing: %v", err)
+			log.Errorf("[Middelware.SessionMiddleware] Cookie is missing")
 			response.Error(c, http.StatusForbidden, "Session cookie missing", nil)
 			c.Abort()
 			return
@@ -81,8 +69,8 @@ func SessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 
 func AddSessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(sessionCookieName)
-		if err != nil || cookie == "" {
+		cookie, _ := c.Cookie(sessionCookieName)
+		if cookie == "" {
 			token, err := token.GenerateRandomToken()
 			if err != nil {
 				log.Errorf("[Middelware.AddSessionMiddleware] Error get session: %v", err)
@@ -103,8 +91,8 @@ func AddSessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 
 func AddCSRFMiddleware(log *logrus.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cookie, err := c.Cookie(csrfCookieName)
-		if err != nil || cookie == "" {
+		cookie, _ := c.Cookie(csrfCookieName)
+		if cookie == "" {
 			token, err := token.GenerateRandomToken()
 			if err != nil {
 				log.Errorf("[Middelware.AddCSRFMiddleware] Error get CSRF: %v", err)

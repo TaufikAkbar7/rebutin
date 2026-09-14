@@ -2,8 +2,6 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"rebutin/internal/domain"
 	"rebutin/internal/model"
@@ -61,11 +59,12 @@ func (r *ticketRepository) GetByRunID(ctx context.Context, runID uuid.UUID) ([]d
 
 	executor := getExecutor(ctx, r.db)
 	if err := executor.SelectContext(ctx, &model, query, runID); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, domain.ErrNotFound
-		}
 		r.log.Errorf("[TicketRepository.GetByRunID] Error query ticket: %v", err)
 		return nil, fmt.Errorf("failed query ticket")
+	}
+
+	if len(model) == 0 {
+		return nil, domain.ErrNotFound
 	}
 
 	var results []domain.TicketCategories

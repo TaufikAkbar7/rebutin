@@ -9,16 +9,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type TicketUseCase struct {
+type TicketUseCase interface {
+	GetTicketBySimulation(ctx context.Context, id uuid.UUID) ([]dto.TicketResponse, error)
+}
+
+type ticketUseCase struct {
 	log  *logrus.Logger
 	repo domain.TicketRepository
 }
 
-func NewTicketUseCase(log *logrus.Logger, repo domain.TicketRepository) *TicketUseCase {
-	return &TicketUseCase{log: log, repo: repo}
+func NewTicketUseCase(log *logrus.Logger, repo domain.TicketRepository) TicketUseCase {
+	return &ticketUseCase{log: log, repo: repo}
 }
 
-func (r *TicketUseCase) GetTicketBySimulation(ctx context.Context, id uuid.UUID) ([]dto.TicketResponse, error) {
+func (r *ticketUseCase) GetTicketBySimulation(ctx context.Context, id uuid.UUID) ([]dto.TicketResponse, error) {
 	tickets, err := r.repo.GetByRunID(ctx, id)
 	if err != nil {
 		return nil, err

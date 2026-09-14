@@ -1,10 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
-
-	"github.com/sirupsen/logrus"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -35,13 +32,6 @@ func (h *TicketHandler) FindCategories(c *gin.Context) {
 	if err != nil {
 		response.HandleDomainError(c, err)
 		return
-	}
-
-	groupDataJSON, err := json.MarshalIndent(tickets, "", "  ")
-	if err != nil {
-		logrus.Printf("[ERROR] Failed to marshal groupData to JSON: %v", err)
-	} else {
-		logrus.Printf("[DEBUG] Aggregated groupData:\n%s", string(groupDataJSON))
 	}
 
 	response.SuccessWithList(c, http.StatusOK, "Get categories successfully", tickets)
