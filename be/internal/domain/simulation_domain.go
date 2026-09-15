@@ -39,16 +39,29 @@ func (s *SimulationRun) Validate() error {
 	if s.TotalTickets <= 0 {
 		vErr.Add("total_tickets", "total tickets must be greater than 0")
 	}
+
 	if s.BotCount <= 0 {
 		vErr.Add("bot_count", "bot count must be at least 1")
+	} else if s.BotCount > 1000 {
+		vErr.Add("bot_count", "bot count exceeds the maximum allowed value 1000")
 	}
+
 	if s.MaxConcurrent <= 0 {
 		vErr.Add("max_concurrent", "max concurrent must be at least 1")
 	} else if s.MaxConcurrent > s.BotCount {
 		vErr.Add("max_concurrent", "max concurrent cannot exceed total bot count")
+	} else if s.MaxConcurrent > 80 {
+		vErr.Add("max_concurrent", "max concurrent exceeds the maximum allowed value 80")
 	}
+
 	if s.BotThrottleSeconds < 0 {
 		vErr.Add("bot_throttle_seconds", "bot throttle seconds cannot be negative")
+	}
+
+	if s.BotThrottleSeconds < 0 {
+		vErr.Add("bot_throttle_seconds", "bot throttle seconds cannot be negative")
+	} else if s.BotThrottleSeconds > 10 {
+		vErr.Add("bot_throttle_seconds", "bot throttle seconds exceeds the maximum allowed value 10")
 	}
 
 	if vErr.HasErrors() {

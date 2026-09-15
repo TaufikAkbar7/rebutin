@@ -9,6 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"rebutin/internal/domain"
+	"rebutin/pkg/utils"
 )
 
 type Meta struct {
@@ -58,7 +59,7 @@ func ValidationError(c *gin.Context, err error) {
 	fieldErrors := make(map[string]string)
 	if validationErrors, ok := err.(validator.ValidationErrors); ok {
 		for _, fieldError := range validationErrors {
-			fieldErrors[fieldError.Field()] = formatErrorMessage(fieldError)
+			fieldErrors[utils.ToSnakeCase(fieldError.Field())] = formatErrorMessage(fieldError)
 		}
 	}
 
@@ -95,18 +96,19 @@ func HandleDomainError(c *gin.Context, err error) {
 }
 
 func formatErrorMessage(err validator.FieldError) string {
+	field := utils.ToNormalCase(err.Field())
 	switch err.Tag() {
 	case "required":
-		return fmt.Sprintf("%s field is required", err.Field())
+		return fmt.Sprintf("%s field is required", field)
 	case "email":
-		return fmt.Sprintf("%s must be a valid email address", err.Field())
+		return fmt.Sprintf("%s must be a valid email address", field)
 	case "min":
-		return fmt.Sprintf("%s must be at least %s characters long", err.Field(), err.Param())
+		return fmt.Sprintf("%s must be at least %s", field, err.Param())
 	case "max":
-		return fmt.Sprintf("%s must be at most %s characters long", err.Field(), err.Param())
+		return fmt.Sprintf("%s exceeds the maximum allowed value %s", field, err.Param())
 	case "uuid":
-		return fmt.Sprintf("%s must be a valid UUID", err.Field())
+		return fmt.Sprintf("%s must be a valid UUID", field)
 	default:
-		return fmt.Sprintf("%s is invalid", err.Field())
+		return fmt.Sprintf("%s is invalid", field)
 	}
 }

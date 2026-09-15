@@ -36,8 +36,8 @@ Rush ticketing platforms inherently face severe concurrency hurdles:
 **1. Configuration View**
 <br>
 Users configure baseline simulation parameters:
-- Bot Count: 0 – 10,000 concurrent bot workers.
-- Bot Throttle / Network Delay: 1 – 5 seconds.
+- Bot Count: 0 – 1,000 concurrent bot workers.
+- Bot Throttle / Network Delay: 1 – 10 seconds.
 - Total Inventory: Automatically partitioned equally across 3 categories (Total / 3).
 - Max Concurrent Users: Ingress threshold before the Virtual Waiting Room activates.
 - Simulate Delayed Payment Webhook: Emulates payment processing delays colliding with TTL expirations.

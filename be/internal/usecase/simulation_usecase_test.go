@@ -211,6 +211,45 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 
+	t.Run("should fail fast and not call DB if exceed max (bot count, max concurrent and bot throttle)", func(t *testing.T) {
+		mockTx := new(MockTxManager)
+		mockSimRepo := new(MockSimulationRepo)
+		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
+		logger, _ := testutil.SetupLogger(t)
+
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
+
+		req := dto.CreateSimulationRequest{
+			TotalTickets:       10000,
+			BotCount:           2000,
+			MaxConcurrent:      90,
+			BotThrottleSeconds: 20,
+		}
+
+		res, err := uc.StartSimulation(context.Background(), &req)
+
+		assert.Error(t, err)
+		assert.Nil(t, res)
+
+		// extract struct error
+		var valErr *domain.ValidationError
+		ok := errors.As(err, &valErr)
+		require.True(t, ok, "error should be of type *domain.ValidationErrors")
+
+		// expected custom error
+		assert.Len(t, valErr.Errors, 3)
+		assert.Equal(t, "bot count exceeds the maximum allowed value 1000", valErr.Errors["bot_count"])
+		assert.Equal(t, "bot throttle seconds exceeds the maximum allowed value 10", valErr.Errors["bot_throttle_seconds"])
+		assert.Equal(t, "max concurrent exceeds the maximum allowed value 80", valErr.Errors["max_concurrent"])
+
+		// expected layer repo not called
+		mockTx.AssertNotCalled(t, "WithTransaction", mock.Anything, mock.Anything)
+		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
+		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+	})
+
 	t.Run("should abort and rollback when simRepo Create fails", func(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)

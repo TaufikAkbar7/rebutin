@@ -126,6 +126,42 @@ func TestSimulationHandler_Start(t *testing.T) {
 		assert.Len(t, response.Errors, 1)
 		mockUseCase.AssertExpectations(t)
 	})
+
+	t.Run("should return 400 validation failure if exceed max (bot count, max concurrent and bot throttle)", func(t *testing.T) {
+		mockUseCase := new(MockSimulationUseCase)
+		h := handler.NewSimulationHandler(mockUseCase)
+		r := gin.New()
+		r.POST("/api/v1/simulation", h.Start)
+
+		reqBody := dto.CreateSimulationRequest{
+			TotalTickets:       100,
+			MaxConcurrent:      81,
+			BotCount:           10000,
+			BotThrottleSeconds: 15,
+		}
+		bodyBytes, _ := json.Marshal(reqBody)
+
+		bizErr := &domain.ValidationError{Errors: make(map[string]string)}
+		bizErr.Add("bot_count", "bot count exceeds the maximum allowed value 1000")
+		bizErr.Add("max_concurrent", "max concurrent exceeds the maximum allowed value 80")
+		bizErr.Add("bot_throttle_seconds", "bot throttle seconds exceeds the maximum allowed value 10")
+
+		req, _ := http.NewRequest(http.MethodPost, "/api/v1/simulation", bytes.NewBuffer(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		r.ServeHTTP(w, req)
+
+		var response response.APIErrorResponse[map[string]string]
+		responseBody, err := io.ReadAll(w.Body)
+
+		err = json.Unmarshal(responseBody, &response)
+		assert.NoError(t, err)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Contains(t, response.Message, "Validation failed")
+		assert.Len(t, response.Errors, 3)
+	})
 }
 
 func TestSimulationHandler_End(t *testing.T) {
