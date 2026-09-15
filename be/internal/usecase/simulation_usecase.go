@@ -18,14 +18,15 @@ type SimulationUseCase interface {
 }
 
 type simulationUseCase struct {
-	txManager  domain.TransactionManager
-	repo       domain.SimulationRepository
-	log        *logrus.Logger
-	ticketRepo domain.TicketRepository
+	txManager       domain.TransactionManager
+	repo            domain.SimulationRepository
+	log             *logrus.Logger
+	ticketRepo      domain.TicketRepository
+	participantRepo domain.ParticipantRepository
 }
 
-func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository) SimulationUseCase {
-	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo}
+func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository) SimulationUseCase {
+	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo}
 }
 
 func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error) {
@@ -45,6 +46,7 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 	}
 
 	categories := u.setupCategories(sim.TotalTickets, sim.ID)
+	participants := u.setupParticipants(sim.BotCount, sim.ID)
 
 	err := u.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		if err := u.repo.Create(ctx, sim); err != nil {
@@ -52,6 +54,9 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 		}
 		if err := u.ticketRepo.BatchCreate(ctx, categories); err != nil {
 			return fmt.Errorf("error batch categories %f", err)
+		}
+		if err := u.participantRepo.BatchCreate(ctx, participants); err != nil {
+			return fmt.Errorf("error insert participant %f", err)
 		}
 		return nil
 	})
@@ -111,4 +116,32 @@ func (u *simulationUseCase) setupCategories(totalTickets int, simID uuid.UUID) [
 	}
 
 	return categories
+}
+
+func (u *simulationUseCase) setupParticipants(totalBots int, simID uuid.UUID) []domain.Participant {
+	participantID, _ := uuid.NewV7()
+	participants := []domain.Participant{
+		{
+			ID:         participantID,
+			RunID:      simID,
+			Identifier: "real-user",
+			IsBot:      false,
+			CreatedAt:  time.Now(),
+		},
+	}
+
+	// create bots
+	for i := range totalBots {
+		idetifier := fmt.Sprintf("bot-%d", i+1)
+		id, _ := uuid.NewV7()
+		participants = append(participants, domain.Participant{
+			ID:         id,
+			RunID:      simID,
+			Identifier: idetifier,
+			IsBot:      true,
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	return participants
 }

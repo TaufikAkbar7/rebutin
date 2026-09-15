@@ -82,6 +82,7 @@ func AddSessionMiddleware(log *logrus.Logger) gin.HandlerFunc {
 			// set cookie
 			c.SetSameSite(http.SameSiteLaxMode)
 			c.SetCookie(sessionCookieName, token, 0, "/", "", true, true)
+			c.Set("session-cookie", token)
 			log.Infof("[Middelware.AddSessionMiddleware] Set session cookie successfully")
 		}
 

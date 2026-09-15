@@ -38,13 +38,21 @@ func (m *MockSimulationRepo) UpdateStatus(ctx context.Context, id uuid.UUID, sta
 	return args.Error(0)
 }
 
+type MockParticipantRepo struct{ mock.Mock }
+
+func (m *MockParticipantRepo) BatchCreate(ctx context.Context, payload []domain.Participant) error {
+	args := m.Called(ctx, payload)
+	return args.Error(0)
+}
+
 func TestSimulationUseCase_StartSimulation_Success(t *testing.T) {
 	mockTxManager := new(MockTxManager)
 	mockSimRepo := new(MockSimulationRepo)
 	mockTicketRepo := new(MockTicketRepo)
+	mockParticipantRepo := new(MockParticipantRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -55,6 +63,7 @@ func TestSimulationUseCase_StartSimulation_Success(t *testing.T) {
 
 	mockSimRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.SimulationRun")).Return(nil)
 	mockTicketRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.TicketCategories")).Return(nil)
+	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req)
@@ -66,15 +75,17 @@ func TestSimulationUseCase_StartSimulation_Success(t *testing.T) {
 	mockSimRepo.AssertExpectations(t)
 	mockTicketRepo.AssertExpectations(t)
 	mockTxManager.AssertExpectations(t)
+	mockParticipantRepo.AssertExpectations(t)
 }
 
 func TestSimulationUseCase_QoutaDistribution(t *testing.T) {
 	mockTxManager := new(MockTxManager)
 	mockSimRepo := new(MockSimulationRepo)
 	mockTicketRepo := new(MockTicketRepo)
+	mockParticipantRepo := new(MockParticipantRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -93,6 +104,7 @@ func TestSimulationUseCase_QoutaDistribution(t *testing.T) {
 		// CAT 1 34 | CAT 2 33 | CAT 3 33
 		return tickets[0].Quota == 34 && tickets[1].Quota == 33 && tickets[2].Quota == 33
 	})).Return(nil)
+	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req)
@@ -104,6 +116,62 @@ func TestSimulationUseCase_QoutaDistribution(t *testing.T) {
 	mockSimRepo.AssertExpectations(t)
 	mockTicketRepo.AssertExpectations(t)
 	mockTxManager.AssertExpectations(t)
+	mockParticipantRepo.AssertExpectations(t)
+}
+
+func TestSimulationUseCase_GenerateParticipants(t *testing.T) {
+	mockTxManager := new(MockTxManager)
+	mockSimRepo := new(MockSimulationRepo)
+	mockTicketRepo := new(MockTicketRepo)
+	mockParticipantRepo := new(MockParticipantRepo)
+	logger, _ := testutil.SetupLogger(t)
+
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
+
+	req := dto.CreateSimulationRequest{
+		TotalTickets:       100,
+		BotCount:           3,
+		BotThrottleSeconds: 1,
+		MaxConcurrent:      1,
+	}
+
+	mockSimRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.SimulationRun")).Return(nil)
+	mockTicketRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.TicketCategories")).Return(nil)
+	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.MatchedBy(func(participants []domain.Participant) bool {
+		if len(participants) != 4 {
+			return false
+		}
+
+		expected := []struct {
+			identifier string
+			isBot      bool
+		}{
+			{identifier: "real-user", isBot: false},
+			{identifier: "bot-1", isBot: true},
+			{identifier: "bot-2", isBot: true},
+			{identifier: "bot-3", isBot: true},
+		}
+
+		for i, exp := range expected {
+			if participants[i].Identifier != exp.identifier || participants[i].IsBot != exp.isBot {
+				return false
+			}
+		}
+
+		return true
+	})).Return(nil)
+	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
+
+	res, err := uc.StartSimulation(context.Background(), &req)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, res)
+	assert.Equal(t, string(domain.StatusRunning), res.Status)
+
+	mockSimRepo.AssertExpectations(t)
+	mockTicketRepo.AssertExpectations(t)
+	mockTxManager.AssertExpectations(t)
+	mockParticipantRepo.AssertExpectations(t)
 }
 
 func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
@@ -111,9 +179,10 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets: 0,
@@ -139,15 +208,17 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockTx.AssertNotCalled(t, "WithTransaction", mock.Anything, mock.Anything)
 		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when simRepo Create fails", func(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -167,15 +238,17 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		assert.ErrorContains(t, err, dbErr.Error())
 
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when ticketRepo BatchCreate fails", func(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -194,15 +267,49 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, res)
 		assert.ErrorContains(t, err, dbErr.Error())
+		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+	})
+
+	t.Run("should abort and rollback when participantRepo BatchCreate fails", func(t *testing.T) {
+		mockTx := new(MockTxManager)
+		mockSimRepo := new(MockSimulationRepo)
+		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
+		logger, _ := testutil.SetupLogger(t)
+
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
+
+		req := dto.CreateSimulationRequest{
+			TotalTickets:       100,
+			BotCount:           10,
+			BotThrottleSeconds: 0,
+			MaxConcurrent:      1,
+		}
+
+		dbErr := errors.New("unique constraint violation")
+		mockSimRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
+		mockTicketRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(nil)
+		mockParticipantRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(dbErr)
+		mockTx.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
+
+		res, err := uc.StartSimulation(context.Background(), &req)
+
+		assert.Error(t, err)
+		assert.Nil(t, res)
+		assert.ErrorContains(t, err, dbErr.Error())
+		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
+		mockTicketRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 
 	t.Run("should return error when txManager fail to begin trx", func(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -222,15 +329,17 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 
 		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when txManager fail to commit trx", func(t *testing.T) {
 		mockTx := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -242,6 +351,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		dbErr := errors.New("commit fail cause deadlock")
 		mockSimRepo.On("Create", mock.Anything, mock.Anything).Return(nil)
 		mockTicketRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(nil)
+		mockParticipantRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("WithTransaction", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			// get closure from ticketRepo
 			fn := args.Get(1).(domain.AtomicFunc)
@@ -256,6 +366,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 
 		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
+		mockParticipantRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 	})
 }
 
@@ -263,9 +374,10 @@ func TestSimulationUseCase_EndSimulation_Success(t *testing.T) {
 	mockTxManager := new(MockTxManager)
 	mockSimRepo := new(MockSimulationRepo)
 	mockTicketRepo := new(MockTicketRepo)
+	mockParticipantRepo := new(MockParticipantRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 	targetID, _ := uuid.NewV7()
 
@@ -288,9 +400,10 @@ func TestSimulationUseCase_EndSimulation_Failures(t *testing.T) {
 		mockTxManager := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		targetID, _ := uuid.NewV7()
 
@@ -318,9 +431,10 @@ func TestSimulationUseCase_EndSimulation_Failures(t *testing.T) {
 		mockTxManager := new(MockTxManager)
 		mockSimRepo := new(MockSimulationRepo)
 		mockTicketRepo := new(MockTicketRepo)
+		mockParticipantRepo := new(MockParticipantRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo)
+		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo)
 
 		targetID, _ := uuid.NewV7()
 

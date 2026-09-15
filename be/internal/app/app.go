@@ -24,8 +24,9 @@ func NewHTTPHandler(
 	txManager := postgres.NewTxManager(db)
 	simRepo := postgres.NewSimulationRepository(db, log)
 	ticketRepo := postgres.NewTicketRepository(db, log)
+	participantRepo := postgres.NewParticipantRepository(db, log)
 
-	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo)
+	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo)
 	simHandler := handler.NewSimulationHandler(simUsecase)
 
 	ticketUsecase := usecase.NewTicketUseCase(log, ticketRepo)
