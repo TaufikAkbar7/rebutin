@@ -21,7 +21,7 @@ import (
 
 type MockSimulationUseCase struct{ mock.Mock }
 
-func (m *MockSimulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error) {
+func (m *MockSimulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest, userSession *string) (*dto.SimulationResponse, error) {
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

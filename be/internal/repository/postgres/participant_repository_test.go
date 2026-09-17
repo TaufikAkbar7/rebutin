@@ -37,7 +37,7 @@ func TestParticipantRepository_BatchCreate(t *testing.T) {
 			ID:         userID,
 			RunID:      runID,
 			IsBot:      false,
-			Identifier: "real-user",
+			Identifier: domain.IdentifierUser,
 			CreatedAt:  time.Now(),
 		},
 		{

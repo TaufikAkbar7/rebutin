@@ -28,7 +28,14 @@ func (h *SimulationHandler) Start(c *gin.Context) {
 		return
 	}
 
-	user, err := h.simulationUsecase.StartSimulation(c.Request.Context(), &req)
+	// get session from context middleware
+	var sessionCookie string
+	if val, exists := c.Get("session-cookie"); exists {
+		userCookie := val.(string)
+		sessionCookie = userCookie
+	}
+
+	user, err := h.simulationUsecase.StartSimulation(c.Request.Context(), &req, &sessionCookie)
 	if err != nil {
 		response.HandleDomainError(c, err)
 		return

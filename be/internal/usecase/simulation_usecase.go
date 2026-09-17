@@ -13,23 +13,29 @@ import (
 )
 
 type SimulationUseCase interface {
-	StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error)
+	StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest, userSession *string) (*dto.SimulationResponse, error)
 	EndSimulation(ctx context.Context, id uuid.UUID) error
 }
 
 type simulationUseCase struct {
-	txManager       domain.TransactionManager
-	repo            domain.SimulationRepository
-	log             *logrus.Logger
-	ticketRepo      domain.TicketRepository
-	participantRepo domain.ParticipantRepository
+	txManager        domain.TransactionManager
+	repo             domain.SimulationRepository
+	log              *logrus.Logger
+	ticketRepo       domain.TicketRepository
+	participantRepo  domain.ParticipantRepository
+	sessionRedisRepo domain.SessionCacheRepository
 }
 
-func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository) SimulationUseCase {
-	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo}
+func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository, sessionRedisRepo domain.SessionCacheRepository) SimulationUseCase {
+	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo, sessionRedisRepo: sessionRedisRepo}
 }
 
-func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest) (*dto.SimulationResponse, error) {
+func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest, userSession *string) (*dto.SimulationResponse, error) {
+	if userSession == nil {
+		u.log.Errorf("[SimulationUseCase.StartSimulation] User session from middleware context is empty")
+		return nil, fmt.Errorf("user session empty")
+	}
+
 	id, _ := uuid.NewV7()
 	sim := &domain.SimulationRun{
 		ID:                 id,
@@ -62,6 +68,31 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 	})
 
 	if err != nil {
+		return nil, err
+	}
+
+	// store session user to redis
+	dataStores := make([]domain.UserSessionRedis, 0, len(participants))
+	for _, item := range participants {
+		// if user then set session ID
+		if !item.IsBot && item.Identifier == domain.IdentifierUser {
+			dataStores = append(dataStores, domain.UserSessionRedis{
+				SessionID:     userSession,
+				ParticipantID: item.ID,
+				RunID:         item.RunID,
+				Status:        "active",
+			})
+		} else {
+			dataStores = append(dataStores, domain.UserSessionRedis{
+				ParticipantID: item.ID,
+				RunID:         item.RunID,
+				Status:        "active",
+			})
+		}
+	}
+
+	if err := u.sessionRedisRepo.SetBatch(ctx, dataStores); err != nil {
+		u.log.Errorf("[SimulasitionRepository.StartSimulation] Failed store data to redis for key session: %v", err)
 		return nil, err
 	}
 
@@ -124,7 +155,7 @@ func (u *simulationUseCase) setupParticipants(totalBots int, simID uuid.UUID) []
 		{
 			ID:         participantID,
 			RunID:      simID,
-			Identifier: "real-user",
+			Identifier: domain.IdentifierUser,
 			IsBot:      false,
 			CreatedAt:  time.Now(),
 		},
@@ -132,7 +163,7 @@ func (u *simulationUseCase) setupParticipants(totalBots int, simID uuid.UUID) []
 
 	// create bots
 	for i := range totalBots {
-		idetifier := fmt.Sprintf("bot-%d", i+1)
+		idetifier := fmt.Sprintf("%s-%d", domain.IdentifierBot, i+1)
 		id, _ := uuid.NewV7()
 		participants = append(participants, domain.Participant{
 			ID:         id,

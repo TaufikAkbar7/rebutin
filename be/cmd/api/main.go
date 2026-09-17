@@ -16,6 +16,7 @@ import (
 	"rebutin/internal/app"
 	"rebutin/pkg/database"
 	"rebutin/pkg/logger"
+	"rebutin/pkg/redis"
 
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
@@ -37,6 +38,13 @@ func main() {
 	}
 	defer db.Close()
 
+	r := redis.NewRedisClient(cfg.RedisHost, cfg.RedisPassword)
+	pong, err := r.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	log.Printf("Connected to Redis. Ping: %s", pong)
+
 	if v, ok := binding.Validator.Engine().(*validator.Validate); ok {
 		v.RegisterTagNameFunc(func(fld reflect.StructField) string {
 			name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
@@ -47,7 +55,7 @@ func main() {
 		})
 	}
 
-	router := app.NewHTTPHandler(cfg, db, log)
+	router := app.NewHTTPHandler(cfg, db, log, r)
 
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.AppPort),

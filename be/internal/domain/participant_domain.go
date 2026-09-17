@@ -15,6 +15,11 @@ type Participant struct {
 	CreatedAt  time.Time
 }
 
+const (
+	IdentifierUser string = "real-user"
+	IdentifierBot  string = "bot"
+)
+
 type ParticipantRepository interface {
 	BatchCreate(ctx context.Context, participants []Participant) error
 }

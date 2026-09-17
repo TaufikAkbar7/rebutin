@@ -20,6 +20,9 @@ type Config struct {
 	DBName     string
 	DBSchema   string
 	DBSSLMode  string
+
+	RedisHost     string
+	RedisPassword string
 }
 
 func LoadConfig() (*Config, error) {
@@ -27,16 +30,18 @@ func LoadConfig() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		AppEnv:     getEnv("APP_ENV", "development"),
-		AppPort:    getEnv("APP_PORT", "8080"),
-		LogLevel:   getEnv("LOG_LEVEL", "debug"),
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     getEnv("DB_PORT", "5432"),
-		DBUser:     getEnv("DB_USER", "postgres"),
-		DBPassword: getEnv("DB_PASSWORD", "postgres"),
-		DBName:     getEnv("DB_NAME", "rebutin_db"),
-		DBSchema:   getEnv("DB_SCHEMA", "public"),
-		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
+		AppEnv:        getEnv("APP_ENV", "development"),
+		AppPort:       getEnv("APP_PORT", "8080"),
+		LogLevel:      getEnv("LOG_LEVEL", "debug"),
+		DBHost:        getEnv("DB_HOST", "localhost"),
+		DBPort:        getEnv("DB_PORT", "5432"),
+		DBUser:        getEnv("DB_USER", "postgres"),
+		DBPassword:    getEnv("DB_PASSWORD", "postgres"),
+		DBName:        getEnv("DB_NAME", "rebutin_db"),
+		DBSchema:      getEnv("DB_SCHEMA", "public"),
+		DBSSLMode:     getEnv("DB_SSLMODE", "disable"),
+		RedisHost:     getEnv("REDIS_HOST", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 	}
 
 	return cfg, nil
