@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
 	"rebutin/internal/delivery/http/dto"
 	"rebutin/internal/domain"
 	"rebutin/internal/usecase"
@@ -84,7 +85,7 @@ func TestSimulationUseCase_StartSimulation_Success(t *testing.T) {
 	mockSessionRedisRepo := new(MockSessionRedisRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -120,7 +121,7 @@ func TestSimulationUseCase_QoutaDistribution(t *testing.T) {
 	mockSessionRedisRepo := new(MockSessionRedisRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -164,7 +165,7 @@ func TestSimulationUseCase_GenerateParticipants(t *testing.T) {
 	mockSessionRedisRepo := new(MockSessionRedisRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -222,7 +223,13 @@ func TestSimulationUseCase_SessionCacheUser(t *testing.T) {
 	mockSessionRedisRepo := new(MockSessionRedisRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+	reverse := func(n int, swap func(i, j int)) {
+		for i, j := 0, n-1; i < j; i, j = i+1, j-1 {
+			swap(i, j)
+		}
+	}
+
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, reverse)
 
 	req := dto.CreateSimulationRequest{
 		TotalTickets:       100,
@@ -231,9 +238,14 @@ func TestSimulationUseCase_SessionCacheUser(t *testing.T) {
 		MaxConcurrent:      1,
 	}
 
+	var getUserSession []domain.UserSessionRedis
+	var getParticipants []domain.Participant
+
 	mockSimRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.SimulationRun")).Return(nil)
 	mockTicketRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.TicketCategories")).Return(nil)
-	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
+	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Run(func(args mock.Arguments) {
+		getParticipants = args.Get(1).([]domain.Participant)
+	}).Return(nil)
 	mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(func(sessionDatas []domain.UserSessionRedis) bool {
 		if len(sessionDatas) != 4 {
 			return false
@@ -259,14 +271,29 @@ func TestSimulationUseCase_SessionCacheUser(t *testing.T) {
 		}
 
 		return true
-	})).Return(nil)
+	})).Run(func(args mock.Arguments) {
+		getUserSession = args.Get(3).([]domain.UserSessionRedis)
+	}).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req, &dummySession)
 
+	expected := make([]uuid.UUID, 0, len(getParticipants))
+	for i := len(getParticipants) - 1; i >= 0; i-- {
+		expected = append(expected, getParticipants[i].ID)
+	}
+
+	actual := make([]uuid.UUID, 0, len(getUserSession))
+	for _, s := range getUserSession {
+		actual = append(actual, s.ParticipantID)
+	}
+
 	assert.NoError(t, err)
 	assert.NotNil(t, res)
 	assert.Equal(t, string(domain.StatusRunning), res.Status)
+	assert.Len(t, getParticipants, 4)
+	assert.Len(t, getUserSession, 4)
+	assert.Equal(t, expected, actual)
 
 	mockSimRepo.AssertExpectations(t)
 	mockTicketRepo.AssertExpectations(t)
@@ -284,7 +311,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets: 0,
@@ -322,7 +349,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       10000,
@@ -363,7 +390,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -395,7 +422,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -427,7 +454,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -460,7 +487,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -492,7 +519,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -531,7 +558,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTx, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		req := dto.CreateSimulationRequest{
 			TotalTickets:       100,
@@ -568,7 +595,7 @@ func TestSimulationUseCase_EndSimulation_Success(t *testing.T) {
 	mockSessionRedisRepo := new(MockSessionRedisRepo)
 	logger, _ := testutil.SetupLogger(t)
 
-	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+	uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 	targetID, _ := uuid.NewV7()
 
@@ -595,7 +622,7 @@ func TestSimulationUseCase_EndSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		targetID, _ := uuid.NewV7()
 
@@ -627,7 +654,7 @@ func TestSimulationUseCase_EndSimulation_Failures(t *testing.T) {
 		mockSessionRedisRepo := new(MockSessionRedisRepo)
 		logger, _ := testutil.SetupLogger(t)
 
-		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo)
+		uc := usecase.NewSimulationUseCase(mockTxManager, mockSimRepo, logger, mockTicketRepo, mockParticipantRepo, mockSessionRedisRepo, rand.Shuffle)
 
 		targetID, _ := uuid.NewV7()
 

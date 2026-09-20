@@ -1,6 +1,7 @@
 package app
 
 import (
+	"math/rand/v2"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -30,7 +31,7 @@ func NewHTTPHandler(
 	participantRepo := postgres.NewParticipantRepository(db, log)
 	sessionRedisRepo := redisRepo.NewSessionCacheRepository(redis, log)
 
-	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo, sessionRedisRepo)
+	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo, sessionRedisRepo, rand.Shuffle)
 	simHandler := handler.NewSimulationHandler(simUsecase)
 
 	ticketUsecase := usecase.NewTicketUseCase(log, ticketRepo)

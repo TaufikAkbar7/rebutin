@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
 	"time"
 
 	"rebutin/internal/delivery/http/dto"
@@ -18,6 +17,8 @@ type SimulationUseCase interface {
 	EndSimulation(ctx context.Context, id uuid.UUID) error
 }
 
+type ShuffleFunc func(n int, swap func(i, j int))
+
 type simulationUseCase struct {
 	txManager        domain.TransactionManager
 	repo             domain.SimulationRepository
@@ -25,10 +26,11 @@ type simulationUseCase struct {
 	ticketRepo       domain.TicketRepository
 	participantRepo  domain.ParticipantRepository
 	sessionRedisRepo domain.SessionCacheRepository
+	shuffle          ShuffleFunc
 }
 
-func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository, sessionRedisRepo domain.SessionCacheRepository) SimulationUseCase {
-	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo, sessionRedisRepo: sessionRedisRepo}
+func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository, sessionRedisRepo domain.SessionCacheRepository, shuffle ShuffleFunc) SimulationUseCase {
+	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo, sessionRedisRepo: sessionRedisRepo, shuffle: shuffle}
 }
 
 func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest, userSession *string) (*dto.SimulationResponse, error) {
@@ -94,7 +96,7 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 	}
 
 	// shuffle data to achieve fairness queue
-	rand.Shuffle(len(dataStores), func(i, j int) {
+	u.shuffle(len(dataStores), func(i, j int) {
 		dataStores[i], dataStores[j] = dataStores[j], dataStores[i]
 	})
 
