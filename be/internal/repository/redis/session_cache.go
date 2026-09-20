@@ -74,13 +74,13 @@ func (r *sessionCacheRepository) RunState(ctx context.Context, runID string, max
 		pipe.HSetNX(ctx, "active_sessions_count", runID, 0)
 
 		// setup value unix timestamp for waiting_room_queue
-		now := time.Now().Unix()
+		now := time.Now().UnixMicro()
 
 		// check and enter after reshuffle
 		participantKeySession := fmt.Sprintf("session:%s", *data[i].SessionID)
 		keys := []string{"active_sessions_count", participantKeySession, waitingRoom}
 
-		cmds[i] = script.Run(ctx, pipe, keys, runID, max, now, *data[i].SessionID)
+		cmds[i] = script.Run(ctx, pipe, keys, runID, max, now+int64(i), *data[i].SessionID)
 	}
 
 	_, err := pipe.Exec(ctx)
