@@ -10,7 +10,7 @@ import (
 type SessionStatus string
 
 const (
-	StatusQueue     SessionStatus = "queue"
+	StatusQueued    SessionStatus = "queued"
 	StatusActive    SessionStatus = "active"
 	StatusExpired   SessionStatus = "expired"
 	StatusCompleted SessionStatus = "completed"
@@ -35,8 +35,13 @@ type UserSessionRedis struct {
 	CurrentCategoryID *uuid.UUID
 }
 
+type WaitingRoomQueueSession struct {
+	Key   string
+	Value int64
+}
+
 type SessionCacheRepository interface {
-	SetBatch(ctx context.Context, data []UserSessionRedis) error
+	RunState(ctx context.Context, runID string, max int, data []UserSessionRedis) error
 	GetValueAllField(ctx context.Context, key string) (*UserSessionRedis, error)
 	GetValueByField(ctx context.Context, key string, field string) (*string, error)
 }

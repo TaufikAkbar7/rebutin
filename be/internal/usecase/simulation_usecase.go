@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"rebutin/internal/delivery/http/dto"
@@ -56,14 +57,15 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 
 	err := u.txManager.WithTransaction(ctx, func(ctx context.Context) error {
 		if err := u.repo.Create(ctx, sim); err != nil {
-			return fmt.Errorf("error insert simulation %f", err)
+			return fmt.Errorf("error insert simulation %w", err)
 		}
 		if err := u.ticketRepo.BatchCreate(ctx, categories); err != nil {
-			return fmt.Errorf("error batch categories %f", err)
+			return fmt.Errorf("error batch categories %w", err)
 		}
 		if err := u.participantRepo.BatchCreate(ctx, participants); err != nil {
-			return fmt.Errorf("error insert participant %f", err)
+			return fmt.Errorf("error insert participant %w", err)
 		}
+
 		return nil
 	})
 
@@ -80,19 +82,25 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 				SessionID:     userSession,
 				ParticipantID: item.ID,
 				RunID:         item.RunID,
-				Status:        "active",
+				Status:        "",
 			})
 		} else {
 			dataStores = append(dataStores, domain.UserSessionRedis{
 				ParticipantID: item.ID,
 				RunID:         item.RunID,
-				Status:        "active",
+				Status:        "",
 			})
 		}
 	}
 
-	if err := u.sessionRedisRepo.SetBatch(ctx, dataStores); err != nil {
-		u.log.Errorf("[SimulasitionRepository.StartSimulation] Failed store data to redis for key session: %v", err)
+	// shuffle data to achieve fairness queue
+	rand.Shuffle(len(dataStores), func(i, j int) {
+		dataStores[i], dataStores[j] = dataStores[j], dataStores[i]
+	})
+
+	// store session user and check and enter ticket/queue
+	if err := u.sessionRedisRepo.RunState(ctx, sim.ID.String(), sim.MaxConcurrent, dataStores); err != nil {
+		u.log.Errorf("[SessionCache.RunState] Failed store data to redis %s: %v", sim.ID.String(), err)
 		return nil, err
 	}
 

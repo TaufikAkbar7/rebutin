@@ -28,7 +28,7 @@ func NewHTTPHandler(
 	simRepo := postgres.NewSimulationRepository(db, log)
 	ticketRepo := postgres.NewTicketRepository(db, log)
 	participantRepo := postgres.NewParticipantRepository(db, log)
-	sessionRedisRepo := redisRepo.NewSessionCacheRepository(redis)
+	sessionRedisRepo := redisRepo.NewSessionCacheRepository(redis, log)
 
 	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo, sessionRedisRepo)
 	simHandler := handler.NewSimulationHandler(simUsecase)

@@ -47,8 +47,8 @@ func (m *MockParticipantRepo) BatchCreate(ctx context.Context, payload []domain.
 
 type MockSessionRedisRepo struct{ mock.Mock }
 
-func (m *MockSessionRedisRepo) SetBatch(ctx context.Context, data []domain.UserSessionRedis) error {
-	args := m.Called(ctx, data)
+func (m *MockSessionRedisRepo) RunState(ctx context.Context, runID string, max int, data []domain.UserSessionRedis) error {
+	args := m.Called(ctx, runID, max, data)
 	return args.Error(0)
 }
 
@@ -96,7 +96,7 @@ func TestSimulationUseCase_StartSimulation_Success(t *testing.T) {
 	mockSimRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.SimulationRun")).Return(nil)
 	mockTicketRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.TicketCategories")).Return(nil)
 	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
-	mockSessionRedisRepo.On("SetBatch", mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
+	mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req, &dummySession)
@@ -140,7 +140,7 @@ func TestSimulationUseCase_QoutaDistribution(t *testing.T) {
 		return tickets[0].Quota == 34 && tickets[1].Quota == 33 && tickets[2].Quota == 33
 	})).Return(nil)
 	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
-	mockSessionRedisRepo.On("SetBatch", mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
+	mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req, &dummySession)
@@ -198,7 +198,7 @@ func TestSimulationUseCase_GenerateParticipants(t *testing.T) {
 
 		return true
 	})).Return(nil)
-	mockSessionRedisRepo.On("SetBatch", mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
+	mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.AnythingOfType("[]domain.UserSessionRedis")).Return(nil)
 	mockTxManager.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
 
 	res, err := uc.StartSimulation(context.Background(), &req, &dummySession)
@@ -234,23 +234,28 @@ func TestSimulationUseCase_SessionCacheUser(t *testing.T) {
 	mockSimRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.SimulationRun")).Return(nil)
 	mockTicketRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.TicketCategories")).Return(nil)
 	mockParticipantRepo.On("BatchCreate", mock.Anything, mock.AnythingOfType("[]domain.Participant")).Return(nil)
-	mockSessionRedisRepo.On("SetBatch", mock.Anything, mock.MatchedBy(func(sessionDatas []domain.UserSessionRedis) bool {
+	mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.MatchedBy(func(sessionDatas []domain.UserSessionRedis) bool {
 		if len(sessionDatas) != 4 {
 			return false
 		}
 
+		expectedParticipantCount := map[string]int{
+			"user": 0,
+			"bot":  0,
+		}
 		for i := range sessionDatas {
-			if sessionDatas[i].Status != domain.StatusActive {
-				return false
-			}
 			// expected user has session id
-			if i == 0 && sessionDatas[i].SessionID == nil {
-				return false
+			if sessionDatas[i].SessionID != nil {
+				expectedParticipantCount["user"]++
 			}
 			// expected bot empty session id
-			if i > 0 && sessionDatas[i].SessionID != nil {
-				return false
+			if sessionDatas[i].SessionID == nil {
+				expectedParticipantCount["bot"]++
 			}
+		}
+
+		if expectedParticipantCount["user"] > 1 || expectedParticipantCount["bot"] != 3 {
+			return false
 		}
 
 		return true
@@ -306,7 +311,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should fail fast and not call DB if exceed max (bot count, max concurrent and bot throttle)", func(t *testing.T) {
@@ -347,7 +352,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when simRepo Create fails", func(t *testing.T) {
@@ -379,7 +384,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when ticketRepo BatchCreate fails", func(t *testing.T) {
@@ -411,7 +416,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		assert.ErrorContains(t, err, dbErr.Error())
 		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when participantRepo BatchCreate fails", func(t *testing.T) {
@@ -444,7 +449,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		assert.ErrorContains(t, err, dbErr.Error())
 		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should return error when txManager fail to begin trx", func(t *testing.T) {
@@ -476,7 +481,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSimRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertNotCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should abort and rollback when txManager fail to commit trx", func(t *testing.T) {
@@ -515,7 +520,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockSimRepo.AssertCalled(t, "Create", mock.Anything, mock.Anything)
 		mockTicketRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
 		mockParticipantRepo.AssertCalled(t, "BatchCreate", mock.Anything, mock.Anything)
-		mockSessionRedisRepo.AssertNotCalled(t, "SetBatch", mock.Anything, mock.Anything)
+		mockSessionRedisRepo.AssertNotCalled(t, "RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("should error 500 when failed to store data to redis for key session", func(t *testing.T) {
@@ -540,7 +545,7 @@ func TestSimulationUseCase_StartSimulation_Failures(t *testing.T) {
 		mockTicketRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(nil)
 		mockParticipantRepo.On("BatchCreate", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("WithTransaction", mock.Anything, mock.Anything).Return(nil)
-		mockSessionRedisRepo.On("SetBatch", mock.Anything, mock.Anything).Return(redisErr)
+		mockSessionRedisRepo.On("RunState", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(redisErr)
 
 		res, err := uc.StartSimulation(context.Background(), &req, &dummySession)
 
