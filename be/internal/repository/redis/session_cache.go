@@ -47,7 +47,7 @@ func (r *sessionCacheRepository) RunState(ctx context.Context, runID string, max
 		else
 		-- join to waiting room
 			redis.call('HSET', KEYS[2], "status", queued)
-			redis.call('ZADD', KEYS[3], ARGV[3], ARGV[4])
+			redis.call('ZADD', KEYS[3], 'NX', ARGV[3], ARGV[4])
 			return 0
 		end
 	`)
