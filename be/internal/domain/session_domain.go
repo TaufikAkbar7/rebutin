@@ -14,6 +14,7 @@ const (
 	StatusActive    SessionStatus = "active"
 	StatusExpired   SessionStatus = "expired"
 	StatusCompleted SessionStatus = "completed"
+	MaxLeaky        int           = 10
 )
 
 type UserSession struct {
@@ -44,4 +45,5 @@ type SessionCacheRepository interface {
 	RunState(ctx context.Context, runID string, max int, data []UserSessionRedis) error
 	GetValueAllField(ctx context.Context, key string) (*UserSessionRedis, error)
 	GetValueByField(ctx context.Context, key string, field string) (*string, error)
+	Drain(ctx context.Context, runID string, max, batch int) ([]string, error)
 }

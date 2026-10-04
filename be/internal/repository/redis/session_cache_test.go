@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSessionCacheRepository_RunState(t *testing.T) {
@@ -347,5 +348,206 @@ func TestSessionCacheRepository_GetValueByField(t *testing.T) {
 
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		assert.Nil(t, val)
+	})
+}
+
+func TestSessionCacheRepository_Drain(t *testing.T) {
+	t.Run("should drain batch = 2", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+		waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+		activeStr := string(domain.StatusActive)
+
+		mr.HSet("active_sessions_count", runID, "0")
+		_, _ = mr.ZAdd(waitingRoom, 1, "one")
+		_, _ = mr.ZAdd(waitingRoom, 2, "two")
+		_, _ = mr.ZAdd(waitingRoom, 3, "three")
+
+		result, err := repo.Drain(ctx, runID, 5, 2)
+		assert.NoError(t, err)
+
+		assert.Len(t, result, 2)
+		require.Equal(t, []string{"session:one", "session:two"}, result)
+
+		sessionOne := result[0]
+		sessionOneTTL := mr.TTL(sessionOne)
+		sessionOneStatus := mr.HGet(sessionOne, "status")
+		assert.Equal(t, 600*time.Second, sessionOneTTL)
+		assert.Equal(t, activeStr, sessionOneStatus)
+
+		sessionTwo := result[0]
+		sessionTwoTTL := mr.TTL(sessionTwo)
+		sessionTwoStatus := mr.HGet(sessionTwo, "status")
+		assert.Equal(t, 600*time.Second, sessionTwoTTL)
+		assert.Equal(t, activeStr, sessionTwoStatus)
+
+		incr := mr.HGet("active_sessions_count", runID)
+		assert.Equal(t, "2", incr)
+
+		members, _ := mr.ZMembers(waitingRoom)
+		require.Equal(t, []string{"three"}, members)
+	})
+
+	t.Run("should release one session", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+		waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+
+		mr.HSet("active_sessions_count", runID, "2")
+		_, _ = mr.ZAdd(waitingRoom, 1, "one")
+		_, _ = mr.ZAdd(waitingRoom, 2, "two")
+		_, _ = mr.ZAdd(waitingRoom, 3, "three")
+
+		result, err := repo.Drain(ctx, runID, 3, 5)
+		assert.NoError(t, err)
+
+		assert.Len(t, result, 1)
+		require.Equal(t, []string{"session:one"}, result)
+
+		count := mr.HGet("active_sessions_count", runID)
+		require.Equal(t, "3", count)
+
+		members, _ := mr.ZMembers(waitingRoom)
+		require.Equal(t, []string{"two", "three"}, members)
+	})
+
+	t.Run("should no slot avail", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+		waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+
+		mr.HSet("active_sessions_count", runID, "2")
+		_, _ = mr.ZAdd(waitingRoom, 1, "one")
+
+		result, err := repo.Drain(ctx, runID, 2, 5)
+		assert.NoError(t, err)
+
+		assert.Len(t, result, 0)
+		require.Equal(t, []string{}, result)
+
+		members, _ := mr.ZMembers(waitingRoom)
+		require.Equal(t, []string{"one"}, members)
+	})
+
+	t.Run("should queue is empty", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+
+		mr.HSet("active_sessions_count", runID, "0")
+
+		result, err := repo.Drain(ctx, runID, 2, 5)
+		assert.NoError(t, err)
+
+		assert.Empty(t, result)
+	})
+
+	t.Run("should active_sessions_count start 0 when active_sessions_count is missing", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+		waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+
+		_, _ = mr.ZAdd(waitingRoom, 1, "one")
+
+		result, err := repo.Drain(ctx, runID, 1, 4)
+		assert.NoError(t, err)
+
+		assert.Len(t, result, 1)
+		require.Equal(t, []string{"session:one"}, result)
+
+		count := mr.HGet("active_sessions_count", runID)
+		assert.Equal(t, "1", count)
+	})
+
+	t.Run("should lowest score first waiting_room_queue", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+		runID := "run-1"
+		waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+
+		mr.HSet("active_sessions_count", runID, "0")
+		_, _ = mr.ZAdd(waitingRoom, 300, "three")
+		_, _ = mr.ZAdd(waitingRoom, 100, "one")
+		_, _ = mr.ZAdd(waitingRoom, 200, "two")
+
+		result, err := repo.Drain(ctx, runID, 5, 2)
+		assert.NoError(t, err)
+
+		assert.Len(t, result, 2)
+		require.Equal(t, []string{"session:one", "session:two"}, result)
+
+		count := mr.HGet("active_sessions_count", runID)
+		assert.Equal(t, "2", count)
+	})
+
+	t.Run("should isolated per runID", func(t *testing.T) {
+		mr, err := miniredis.Run()
+		assert.NoError(t, err)
+		defer mr.Close()
+
+		client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		logger, _ := testutil.SetupLogger(t)
+		repo := repoRedis.NewSessionCacheRepository(client, logger)
+
+		ctx := context.Background()
+
+		mr.HSet("active_sessions_count", "run-1", "0")
+		mr.HSet("active_sessions_count", "run-2", "0")
+		_, _ = mr.ZAdd("waiting_room_queue:run-1", 1, "a1")
+		_, _ = mr.ZAdd("waiting_room_queue:run-2", 1, "b1")
+
+		got, err := repo.Drain(ctx, "run-1", 5, 5)
+		require.NoError(t, err)
+		require.Equal(t, []string{"session:a1"}, got)
+
+		got, err = repo.Drain(ctx, "run-2", 5, 5)
+		require.NoError(t, err)
+		require.Equal(t, []string{"session:b1"}, got)
 	})
 }

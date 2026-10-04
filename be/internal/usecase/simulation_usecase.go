@@ -19,6 +19,11 @@ type SimulationUseCase interface {
 
 type ShuffleFunc func(n int, swap func(i, j int))
 
+type RunScheduler interface {
+	Start(runID string, max, batch int)
+	Stop(runID string)
+}
+
 type simulationUseCase struct {
 	txManager        domain.TransactionManager
 	repo             domain.SimulationRepository
@@ -27,10 +32,11 @@ type simulationUseCase struct {
 	participantRepo  domain.ParticipantRepository
 	sessionRedisRepo domain.SessionCacheRepository
 	shuffle          ShuffleFunc
+	drainerScheduler RunScheduler
 }
 
-func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository, sessionRedisRepo domain.SessionCacheRepository, shuffle ShuffleFunc) SimulationUseCase {
-	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo, sessionRedisRepo: sessionRedisRepo, shuffle: shuffle}
+func NewSimulationUseCase(txManager domain.TransactionManager, repo domain.SimulationRepository, log *logrus.Logger, ticketRepo domain.TicketRepository, participantRepo domain.ParticipantRepository, sessionRedisRepo domain.SessionCacheRepository, shuffle ShuffleFunc, drainerScheduler RunScheduler) SimulationUseCase {
+	return &simulationUseCase{txManager: txManager, repo: repo, log: log, ticketRepo: ticketRepo, participantRepo: participantRepo, sessionRedisRepo: sessionRedisRepo, shuffle: shuffle, drainerScheduler: drainerScheduler}
 }
 
 func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.CreateSimulationRequest, userSession *string) (*dto.SimulationResponse, error) {
@@ -105,6 +111,9 @@ func (u *simulationUseCase) StartSimulation(ctx context.Context, req *dto.Create
 		u.log.Errorf("[SessionCache.RunState] Failed store data to redis %s: %v", sim.ID.String(), err)
 		return nil, err
 	}
+
+	// run drain
+	u.drainerScheduler.Start(sim.ID.String(), sim.MaxConcurrent, domain.MaxLeaky)
 
 	u.log.Infof("[SimulationUseCase.StartSimulation] Simulation created successfully with ID: %s", sim.ID)
 	return &dto.SimulationResponse{

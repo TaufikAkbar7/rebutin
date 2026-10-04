@@ -1,8 +1,13 @@
 package app
 
 import (
+	"context"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -13,6 +18,7 @@ import (
 	"rebutin/internal/delivery/http/handler"
 	"rebutin/internal/delivery/http/middleware"
 	"rebutin/internal/delivery/http/response"
+	"rebutin/internal/delivery/worker"
 	"rebutin/internal/repository/postgres"
 	redisRepo "rebutin/internal/repository/redis"
 	"rebutin/internal/usecase"
@@ -31,7 +37,13 @@ func NewHTTPHandler(
 	participantRepo := postgres.NewParticipantRepository(db, log)
 	sessionRedisRepo := redisRepo.NewSessionCacheRepository(redis, log)
 
-	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo, sessionRedisRepo, rand.Shuffle)
+	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	drainerWorker := worker.NewDrainer(sessionRedisRepo, time.Second, log)
+	drainerScheduler := worker.NewDrainerScheduler(appCtx, drainerWorker, log)
+
+	simUsecase := usecase.NewSimulationUseCase(txManager, simRepo, log, ticketRepo, participantRepo, sessionRedisRepo, rand.Shuffle, drainerScheduler)
 	simHandler := handler.NewSimulationHandler(simUsecase)
 
 	ticketUsecase := usecase.NewTicketUseCase(log, ticketRepo)

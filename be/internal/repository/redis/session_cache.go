@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -87,7 +88,7 @@ func (r *sessionCacheRepository) RunState(ctx context.Context, runID string, max
 
 	for i, cmd := range cmds {
 		val, cmdErr := cmd.Result()
-		r.log.Infof("[Simulation.RunState] User %s | Result: %v | Error: %v\n", *data[i].SessionID, val, cmdErr)
+		r.log.Infof("[Session.RunState] User %s | Result: %v | Error: %v\n", *data[i].SessionID, val, cmdErr)
 	}
 
 	return err
@@ -116,4 +117,40 @@ func (r *sessionCacheRepository) GetValueByField(ctx context.Context, key string
 	}
 
 	return &val, nil
+}
+
+func (r *sessionCacheRepository) Drain(ctx context.Context, runID string, max, batch int) ([]string, error) {
+	leakyScript := redis.NewScript(`
+		local current = tonumber(redis.call('HGET', KEYS[1], ARGV[1]) or "0")
+		local n = math.min(tonumber(ARGV[2]) - current, tonumber(ARGV[3]))
+		if n <= 0 then return {} end
+
+		local popped = redis.call('ZPOPMIN', KEYS[2], n)
+		local admitted = {}
+
+		-- looping odd number to get session
+		for i = 1, #popped, 2 do
+			-- concat str
+		    local key = 'session:' .. popped[i]
+		    redis.call('HSET', key, 'status', ARGV[4])
+		    redis.call('EXPIRE', key, 600)
+		    redis.call('HINCRBY', KEYS[1], ARGV[1], 1)
+		    admitted[#admitted + 1] = key
+		end
+		return admitted
+	`)
+
+	waitingRoom := fmt.Sprintf("waiting_room_queue:%s", runID)
+	values, err := leakyScript.Run(ctx, r.rdb, []string{"active_sessions_count", waitingRoom}, runID, max, batch, string(domain.StatusActive)).StringSlice()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	valuesJSON, _ := json.MarshalIndent(values, "", "  ")
+	r.log.Infof("[Session.Drainer] Participant left the waiting room %s\n", valuesJSON)
+
+	return values, nil
 }
